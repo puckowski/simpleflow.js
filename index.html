@@ -1,0 +1,104 @@
+<html>
+
+<head>
+    <script src="./simpleflow.js"></script>
+</head>
+
+<body>
+    <input type="file" id="modelImport" />
+
+    <script type="module">
+        import { Xdata, Ydata } from './data.js';
+
+        // -- utility for clipping as before
+        function clip(x, min, max) {
+            return Math.max(min, Math.min(max, x));
+        }
+
+        // -- normalization helpers
+        function computeMinMax(data) {
+            // data: array of arrays, all same length
+            const dims = data[0].length;
+            const min = Array(dims).fill(Infinity);
+            const max = Array(dims).fill(-Infinity);
+            for (const row of data) {
+                row.forEach((v, i) => {
+                    if (v < min[i]) min[i] = v;
+                    if (v > max[i]) max[i] = v;
+                });
+            }
+            return { min, max };
+        }
+
+        function normalizeRow(row, min, max) {
+            return row.map((v, i) =>
+                // avoid division by zero if max==min
+                max[i] === min[i] ? 0 : (v - min[i]) / (max[i] - min[i])
+            );
+        }
+
+        function denormalizeValue(yNorm, min, max) {
+            return yNorm * (max - min) + min;
+        }
+
+
+        document.getElementById('modelImport').addEventListener('change', async function (e) {
+            const file = e.target.files[0];
+            if (file) {
+                await FlexibleNN.importModelFromFile(file, 'my-multivariate-model');
+                alert('Model imported!');
+
+                const loadedModel = await FlexibleNN.loadModel("my-multivariate-model");
+
+                let index = 0;
+                for (const rawRow of X) {
+                    const normRow = normalizeRow(rawRow, Xmin, Xmax);
+                    const predNorm = loadedModel.predict(normRow)[0];
+                    const pred = denormalizeValue(predNorm, Ymin, Ymax);
+                    console.log(rawRow, "→", pred.toFixed(4) + ' diff: ' + Math.abs(Y[index] - pred.toFixed(4)));
+                    index++;
+                }
+            }
+        });
+
+        // --- your raw data: ---
+        const X = Xdata;
+        const Y = Ydata;
+
+        // compute min/max for each column
+        const { min: Xmin, max: Xmax } = computeMinMax(X);
+        const { min: YminArr, max: YmaxArr } = computeMinMax(Y);
+        // since Y is 1-D target, grab scalars
+        const Ymin = YminArr[0], Ymax = YmaxArr[0];
+
+        // normalize data into [0,1]
+        const Xnorm = X.map(row => normalizeRow(row, Xmin, Xmax));
+        const Ynorm = Y.map(row => [normalizeRow(row, YminArr, YmaxArr)[0]]);
+
+        // build, train, and save your model on normalized data:
+        let builder = new FlexibleNNBuilder();
+
+        let model = builder
+            .withLayerSizes([3, 32, 32, 32, 1])
+            .withLearningRate(0.01)
+            .withActivation('clippedRelu', 1)
+            .build();
+
+        model.train(Xnorm, Ynorm, 1000);
+        await model.saveModel("my-multivariate-model");
+        await FlexibleNN.exportModelToFile('my-multivariate-model');
+
+        // Example: check training-data predictions
+        let index = 0;
+        console.log("Training data predictions (de-normalized):");
+        for (const rawRow of X) {
+            const normRow = normalizeRow(rawRow, Xmin, Xmax);
+            const predNorm = model.predict(normRow)[0];
+            const pred = denormalizeValue(predNorm, Ymin, Ymax);
+            console.log(rawRow, "→", pred.toFixed(4) + ' diff: ' + Math.abs(Y[index] - pred.toFixed(4)));
+            index++;
+        }
+    </script>
+</body>
+
+</html>
