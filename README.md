@@ -40,3 +40,12 @@ const nn = new FlexibleNNBuilder()
 ```
 
 Note: For softmax, you’ll need to handle it as a vector function, not per-neuron!
+
+# Loading Pre-trained Models
+
+```javascript
+// Load foo.bin into IndexedDB under the key "foo"
+await loadBinModelToIndexedDB('/models/foo.bin', 'foo');
+// Now you can use FlexibleNN.loadModel('foo') as usual
+const model = await FlexibleNN.loadModel('foo');
+```
