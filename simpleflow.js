@@ -45,7 +45,7 @@ class FlexibleNN {
         this.activationName = config.activationName ?? "relu";
         this.outputActivationName = config.outputActivationName ?? null;
         this.outputActivationCap = config.outputActivationCap ?? 1.0;
-        
+
         if (config.activationName === "clippedRelu") {
             this.activation = (x) => ActivationLookup["clippedRelu"][0](x, this.activationCap);
             this.dActivation = (x) => ActivationLookup["clippedRelu"][1](x, this.activationCap);
@@ -181,6 +181,30 @@ class FlexibleNN {
                 resolve(true);
             };
             req.onerror = e => { db.close(); reject(e); };
+        });
+    }
+
+    static async loadBinModelToIndexedDB(url, key) {
+        // 1. Fetch file as text
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Failed to fetch model: ${resp.status}`);
+        const text = await resp.text();
+
+        // 2. Parse JSON
+        let modelData;
+        try {
+            modelData = JSON.parse(text);
+        } catch (err) {
+            throw new Error("Invalid .bin model file: " + err.message);
+        }
+
+        // 3. Store in IndexedDB (using your FlexibleNN code)
+        const db = await FlexibleNN._openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('models', 'readwrite');
+            tx.objectStore('models').put(modelData, key);
+            tx.oncomplete = () => { db.close(); resolve(true); };
+            tx.onerror = (e) => { db.close(); reject(e); };
         });
     }
 
