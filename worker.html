@@ -241,10 +241,10 @@
                 tx.oncomplete = async () => {
                     db.close();
 
-                    await FlexibleNN.exportModelToFile(key);
+                    await FlexibleNN.exportModelToBinFile({ key: key, quantized: false });
                     alert("Model saved and exported as .bin file!");
 
-                    await FlexibleNN.exportModelToBinFile8bit(key);
+                    await FlexibleNN.exportModelToBinFile({ key: key, quantized: true, bits: 8 });
                 };
                 tx.onerror = (e) => { db.close(); alert("Failed to save model!"); };
             } else if (e.data.type === "prediction") {

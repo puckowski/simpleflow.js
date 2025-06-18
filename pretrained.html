@@ -53,7 +53,7 @@
         const Xnorm = X.map(row => normalizeRow(row, Xmin, Xmax));
         const Ynorm = Y.map(row => [normalizeRow(row, YminArr, YmaxArr)[0]]);
 
-        await FlexibleNN.load8bitBinModelToIndexedDB('my-trained-model_8bit.bin', 'myModel8bit');
+        await FlexibleNN.loadBinModelToIndexedDB('my-trained-model_8bit.bin', 'myModel8bit', { quantized: true, bits: 8 });
         const loadedModel = await FlexibleNN.loadModel('myModel8bit');
 
         let index = 0;

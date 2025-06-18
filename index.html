@@ -86,7 +86,7 @@
 
         model.train(Xnorm, Ynorm, 1000);
         await model.saveModel("my-multivariate-model");
-        await FlexibleNN.exportModelToFile('my-multivariate-model');
+        await FlexibleNN.exportModelToBinFile({ key: 'my-multivariate-model', quantized: false });
 
         // Example: check training-data predictions
         let index = 0;
