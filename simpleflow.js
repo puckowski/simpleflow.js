@@ -255,6 +255,132 @@ class FlexibleNN {
         });
     }
 
+    // In FlexibleNN:
+    static async exportModelToBinFile8bit(key) {
+        // 1. Get the model from IndexedDB
+        const db = await FlexibleNN._openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('models', 'readonly');
+            const req = tx.objectStore('models').get(key);
+            req.onsuccess = () => {
+                db.close();
+                if (!req.result) return reject(new Error('Model not found for key: ' + key));
+                const model = req.result;
+                // Quantize weights and biases, record their min/max for each matrix/vector
+                let quant = { weights: [], weightsMinMax: [], biases: [], biasesMinMax: [] };
+                for (let l = 0; l < model.weights.length; ++l) {
+                    // Weights
+                    let wArr = model.weights[l].flat();
+                    let wMin = Math.min(...wArr);
+                    let wMax = Math.max(...wArr);
+                    quant.weightsMinMax.push([wMin, wMax]);
+                    let wQuant = wArr.map(v =>
+                        Math.round((v - wMin) / (wMax - wMin || 1) * 255) - 128 // Int8
+                    );
+                    quant.weights.push(Int8Array.from(wQuant));
+                    // Biases
+                    let bArr = model.biases[l];
+                    let bMin = Math.min(...bArr);
+                    let bMax = Math.max(...bArr);
+                    quant.biasesMinMax.push([bMin, bMax]);
+                    let bQuant = bArr.map(v =>
+                        Math.round((v - bMin) / (bMax - bMin || 1) * 255) - 128
+                    );
+                    quant.biases.push(Int8Array.from(bQuant));
+                }
+                // Save other config
+                const meta = {
+                    layerSizes: model.layerSizes,
+                    activationName: model.activationName,
+                    activationCap: model.activationCap,
+                    outputActivationName: model.outputActivationName,
+                    outputActivationCap: model.outputActivationCap,
+                    weightsMinMax: quant.weightsMinMax,
+                    biasesMinMax: quant.biasesMinMax,
+                };
+                // Serialize (meta JSON + all arrays in order)
+                let metaStr = JSON.stringify(meta);
+                let metaLen = new Uint32Array([metaStr.length]);
+                let binParts = [metaLen.buffer, new TextEncoder().encode(metaStr)];
+                for (let l = 0; l < quant.weights.length; ++l) {
+                    binParts.push(quant.weights[l].buffer);
+                    binParts.push(quant.biases[l].buffer);
+                }
+                let blob = new Blob(binParts, { type: 'application/octet-stream' });
+                // Trigger download
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${key}_8bit.bin`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                resolve(true);
+            };
+            req.onerror = e => { db.close(); reject(e); };
+        });
+    }
+
+    // Usage: FlexibleNN.import8bitBinModelToIndexedDB(file, key)
+    static async import8bitBinModelToIndexedDB(file, key) {
+        // 1. Read file as ArrayBuffer
+        const arrBuf = await file.arrayBuffer();
+        let view = new DataView(arrBuf);
+        let offset = 0;
+        let metaLen = view.getUint32(offset, /*littleEndian=*/true); offset += 4;
+        let metaStr = new TextDecoder().decode(
+            new Uint8Array(arrBuf, offset, metaLen)
+        ); offset += metaLen;
+        const meta = JSON.parse(metaStr);
+
+        // 2. Load weights/biases, dequantize
+        let weights = [], biases = [];
+        for (let l = 0; l < meta.layerSizes.length - 1; ++l) {
+            let inSize = meta.layerSizes[l], outSize = meta.layerSizes[l + 1];
+            let wLen = inSize * outSize, bLen = outSize;
+            // Weights
+            let wInt8 = new Int8Array(arrBuf, offset, wLen); offset += wLen;
+            let [wMin, wMax] = meta.weightsMinMax[l];
+            let wMat = [];
+            for (let i = 0; i < outSize; ++i) {
+                let row = [];
+                for (let j = 0; j < inSize; ++j) {
+                    let idx = i * inSize + j;
+                    let q = wInt8[idx] + 128; // map back to 0-255
+                    let v = wMin + (wMax - wMin) * (q / 255);
+                    row.push(v);
+                }
+                wMat.push(row);
+            }
+            weights.push(wMat);
+            // Biases
+            let bInt8 = new Int8Array(arrBuf, offset, bLen); offset += bLen;
+            let [bMin, bMax] = meta.biasesMinMax[l];
+            let bVec = [];
+            for (let i = 0; i < bLen; ++i) {
+                let q = bInt8[i] + 128;
+                let v = bMin + (bMax - bMin) * (q / 255);
+                bVec.push(v);
+            }
+            biases.push(bVec);
+        }
+        // 3. Rebuild modelData
+        const modelData = {
+            ...meta,
+            weights,
+            biases
+        };
+        // 4. Save to IndexedDB (identical to other methods)
+        const db = await FlexibleNN._openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('models', 'readwrite');
+            tx.objectStore('models').put(modelData, key);
+            tx.oncomplete = () => { db.close(); resolve(true); };
+            tx.onerror = (e) => { db.close(); reject(e); };
+        });
+    }
+
     static async loadModel(key) {
         const db = await FlexibleNN._openDB();
         return new Promise((resolve, reject) => {

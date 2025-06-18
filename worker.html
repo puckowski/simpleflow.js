@@ -7,6 +7,7 @@
 
 <body>
     <input type="file" id="modelImport" />
+    Quantized: <input type="file" id="modelQuantImport" />
     <canvas id="predictionChart" width="800" height="400"></canvas>
 
     <script type="module">
@@ -89,12 +90,87 @@
             }
         });
 
-        // -- utility for clipping as before
+        document.getElementById('modelQuantImport').addEventListener('change', async function (e) {
+            const file = e.target.files[0];
+            if (file) {
+                await FlexibleNN.import8bitBinModelToIndexedDB(file, 'my-multivariate-model');
+                alert('Model imported!');
+
+                const loadedModel = await FlexibleNN.loadModel("my-multivariate-model");
+
+                let index = 0;
+                let realValues = [];
+                let predictedValues = [];
+                for (const rawRow of X) {
+                    const normRow = normalizeRow(rawRow, Xmin, Xmax);
+                    const predNorm = loadedModel.predict(normRow)[0];
+                    const pred = denormalizeValue(predNorm, Ymin, Ymax);
+                    console.log(rawRow, "→", pred.toFixed(4) + ' diff: ' + Math.abs(Y[index] - pred.toFixed(4)));
+                    realValues.push(Y[index][0]); // If Y is [ [val1], [val2], ... ]
+                    predictedValues.push(pred);
+                    index++;
+                }
+
+                const ctx = document.getElementById('predictionChart').getContext('2d');
+                const data = {
+                    labels: realValues.map((_, i) => i + 1), // e.g. 1, 2, 3, ...
+                    datasets: [
+                        {
+                            label: 'Real Values',
+                            data: realValues,
+                            borderColor: 'blue',
+                            backgroundColor: 'blue',
+                            pointRadius: 2,
+                            fill: false,
+                            tension: 0.1,
+                        },
+                        {
+                            label: 'Predictions',
+                            data: predictedValues,
+                            borderColor: 'red',
+                            backgroundColor: 'red',
+                            pointRadius: 2,
+                            fill: false,
+                            tension: 0.1,
+                        }
+                    ]
+                };
+                const config = {
+                    type: 'line', // or 'scatter'
+                    data: data,
+                    options: {
+                        responsive: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Model Predictions vs Real Values'
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Sample Index'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Value'
+                                }
+                            }
+                        }
+                    }
+                };
+
+                const myChart = new Chart(ctx, config);
+            }
+        });
+
         function clip(x, min, max) {
             return Math.max(min, Math.min(max, x));
         }
 
-        // -- normalization helpers
         function computeMinMax(data) {
             // data: array of arrays, all same length
             const dims = data[0].length;
@@ -120,7 +196,6 @@
             return yNorm * (max - min) + min;
         }
 
-        // --- your raw data: ---
         const X = Xdata;
         const Y = Ydata;
 
@@ -157,19 +232,19 @@
                     cmd: "savemodel"
                 });
             } else if (e.data.type === "savemodel") {
-                // Save to IndexedDB
                 const key = "my-trained-model";
                 const modelData = e.data.modelData;
 
-                // Save using IndexedDB as in your class:
                 const db = await FlexibleNN._openDB();
                 const tx = db.transaction('models', 'readwrite');
                 tx.objectStore('models').put(modelData, key);
                 tx.oncomplete = async () => {
                     db.close();
-                    // Now export as .bin file
+
                     await FlexibleNN.exportModelToFile(key);
                     alert("Model saved and exported as .bin file!");
+
+                    await FlexibleNN.exportModelToBinFile8bit(key);
                 };
                 tx.onerror = (e) => { db.close(); alert("Failed to save model!"); };
             } else if (e.data.type === "prediction") {
@@ -184,7 +259,7 @@
             Y: Ynorm,
             layerSizes: [3, 32, 32, 32, 1],
             learningRate: 0.01,
-            epochs: 50000,
+            epochs: 5000,
             clipValue: undefined
         });
     </script>
