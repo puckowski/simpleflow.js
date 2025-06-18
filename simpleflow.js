@@ -154,120 +154,83 @@ class FlexibleNN {
         return this.forward(x);
     }
 
-    // Export: save model from IndexedDB to a .bin file for download
-    static async exportModelToFile(key) {
-        const db = await FlexibleNN._openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('models', 'readonly');
-            const req = tx.objectStore('models').get(key);
-            req.onsuccess = () => {
-                db.close();
-                if (!req.result) {
-                    reject(new Error('Model not found for key: ' + key));
-                    return;
+    static async loadBinModelToIndexedDB(url, key, { quantized = false, bits = 8 } = {}) {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Failed to fetch model: ${resp.status}`);
+        if (!quantized || bits === 32) {
+            // JSON-based float model
+            const text = await resp.text();
+            let modelData;
+            try {
+                modelData = JSON.parse(text);
+            } catch (err) {
+                throw new Error("Invalid .bin model file: " + err.message);
+            }
+            const db = await FlexibleNN._openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('models', 'readwrite');
+                tx.objectStore('models').put(modelData, key);
+                tx.oncomplete = () => { db.close(); resolve(true); };
+                tx.onerror = (e) => { db.close(); reject(e); };
+            });
+        } else {
+            // 8-bit quantized
+            if (bits !== 8) throw new Error("Only 8-bit quantization supported in this example");
+            const arrBuf = await resp.arrayBuffer();
+            let view = new DataView(arrBuf);
+            let offset = 0;
+            let metaLen = view.getUint32(offset, true); offset += 4;
+            let metaStr = new TextDecoder().decode(
+                new Uint8Array(arrBuf, offset, metaLen)
+            ); offset += metaLen;
+            const meta = JSON.parse(metaStr);
+
+            let weights = [], biases = [];
+            for (let l = 0; l < meta.layerSizes.length - 1; ++l) {
+                let inSize = meta.layerSizes[l], outSize = meta.layerSizes[l + 1];
+                let wLen = inSize * outSize, bLen = outSize;
+
+                // Weights
+                let wInt8 = new Int8Array(arrBuf, offset, wLen); offset += wLen;
+                let [wMin, wMax] = meta.weightsMinMax[l];
+                let wMat = [];
+                for (let i = 0; i < outSize; ++i) {
+                    let row = [];
+                    for (let j = 0; j < inSize; ++j) {
+                        let idx = i * inSize + j;
+                        let q = wInt8[idx] + 128; // map back to 0-255
+                        let v = wMin + (wMax - wMin) * (q / 255);
+                        row.push(v);
+                    }
+                    wMat.push(row);
                 }
-                // Serialize model as JSON, then create a Blob for download
-                const jsonStr = JSON.stringify(req.result);
-                const blob = new Blob([jsonStr], { type: 'application/octet-stream' });
-                // Create a temporary <a> element to trigger the download
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${key}.bin`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                resolve(true);
+                weights.push(wMat);
+
+                // Biases
+                let bInt8 = new Int8Array(arrBuf, offset, bLen); offset += bLen;
+                let [bMin, bMax] = meta.biasesMinMax[l];
+                let bVec = [];
+                for (let i = 0; i < bLen; ++i) {
+                    let q = bInt8[i] + 128;
+                    let v = bMin + (bMax - bMin) * (q / 255);
+                    bVec.push(v);
+                }
+                biases.push(bVec);
+            }
+
+            const modelData = {
+                ...meta,
+                weights,
+                biases,
             };
-            req.onerror = e => { db.close(); reject(e); };
-        });
-    }
-
-    // Add this static method to FlexibleNN
-    static async load8bitBinModelToIndexedDB(url, key) {
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`Failed to fetch model: ${resp.status}`);
-        const arrBuf = await resp.arrayBuffer();
-
-        let view = new DataView(arrBuf);
-        let offset = 0;
-        let metaLen = view.getUint32(offset, /*littleEndian=*/true); offset += 4;
-        let metaStr = new TextDecoder().decode(
-            new Uint8Array(arrBuf, offset, metaLen)
-        ); offset += metaLen;
-        const meta = JSON.parse(metaStr);
-
-        let weights = [], biases = [];
-        for (let l = 0; l < meta.layerSizes.length - 1; ++l) {
-            let inSize = meta.layerSizes[l], outSize = meta.layerSizes[l + 1];
-            let wLen = inSize * outSize, bLen = outSize;
-
-            // Weights
-            let wInt8 = new Int8Array(arrBuf, offset, wLen); offset += wLen;
-            let [wMin, wMax] = meta.weightsMinMax[l];
-            let wMat = [];
-            for (let i = 0; i < outSize; ++i) {
-                let row = [];
-                for (let j = 0; j < inSize; ++j) {
-                    let idx = i * inSize + j;
-                    let q = wInt8[idx] + 128; // map back to 0-255
-                    let v = wMin + (wMax - wMin) * (q / 255);
-                    row.push(v);
-                }
-                wMat.push(row);
-            }
-            weights.push(wMat);
-
-            // Biases
-            let bInt8 = new Int8Array(arrBuf, offset, bLen); offset += bLen;
-            let [bMin, bMax] = meta.biasesMinMax[l];
-            let bVec = [];
-            for (let i = 0; i < bLen; ++i) {
-                let q = bInt8[i] + 128;
-                let v = bMin + (bMax - bMin) * (q / 255);
-                bVec.push(v);
-            }
-            biases.push(bVec);
+            const db = await FlexibleNN._openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('models', 'readwrite');
+                tx.objectStore('models').put(modelData, key);
+                tx.oncomplete = () => { db.close(); resolve(true); };
+                tx.onerror = (e) => { db.close(); reject(e); };
+            });
         }
-
-        const modelData = {
-            ...meta,
-            weights,
-            biases,
-        };
-
-        const db = await FlexibleNN._openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('models', 'readwrite');
-            tx.objectStore('models').put(modelData, key);
-            tx.oncomplete = () => { db.close(); resolve(true); };
-            tx.onerror = (e) => { db.close(); reject(e); };
-        });
-    }
-
-    static async loadBinModelToIndexedDB(url, key) {
-        // 1. Fetch file as text
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`Failed to fetch model: ${resp.status}`);
-        const text = await resp.text();
-
-        // 2. Parse JSON
-        let modelData;
-        try {
-            modelData = JSON.parse(text);
-        } catch (err) {
-            throw new Error("Invalid .bin model file: " + err.message);
-        }
-
-        // 3. Store in IndexedDB (using your FlexibleNN code)
-        const db = await FlexibleNN._openDB();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('models', 'readwrite');
-            tx.objectStore('models').put(modelData, key);
-            tx.oncomplete = () => { db.close(); resolve(true); };
-            tx.onerror = (e) => { db.close(); reject(e); };
-        });
     }
 
     // Import: load model from a .bin file into IndexedDB under a given key
@@ -317,9 +280,8 @@ class FlexibleNN {
         });
     }
 
-    // In FlexibleNN:
-    static async exportModelToBinFile8bit(key) {
-        // 1. Get the model from IndexedDB
+    // Exports model as .bin, quantized if specified, otherwise as float JSON
+    static async exportModelToBinFile({ key, quantized = false, bits = 8 }) {
         const db = await FlexibleNN._openDB();
         return new Promise((resolve, reject) => {
             const tx = db.transaction('models', 'readonly');
@@ -328,7 +290,27 @@ class FlexibleNN {
                 db.close();
                 if (!req.result) return reject(new Error('Model not found for key: ' + key));
                 const model = req.result;
-                // Quantize weights and biases, record their min/max for each matrix/vector
+
+                // If not quantized or bits === 32, just export JSON blob
+                if (!quantized || bits === 32) {
+                    const jsonStr = JSON.stringify(model);
+                    const blob = new Blob([jsonStr], { type: 'application/octet-stream' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${key}.bin`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    resolve(true);
+                    return;
+                }
+
+                // Only 8-bit quantization supported for now
+                if (bits !== 8) return reject(new Error("Only 8-bit quantization is supported"));
+
+                // Quantize weights and biases
                 let quant = { weights: [], weightsMinMax: [], biases: [], biasesMinMax: [] };
                 for (let l = 0; l < model.weights.length; ++l) {
                     // Weights
