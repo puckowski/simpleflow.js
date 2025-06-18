@@ -1,0 +1,128 @@
+<html>
+
+<head>
+    <script src="./simpleflow.js"></script>
+    <script src="./chart.js"></script>
+</head>
+
+<body>
+    <canvas id="predictionChart" width="800" height="400"></canvas>
+
+    <script type="module">
+        import { Xdata, Ydata } from './data.js';
+
+        function clip(x, min, max) {
+            return Math.max(min, Math.min(max, x));
+        }
+
+        function computeMinMax(data) {
+            // data: array of arrays, all same length
+            const dims = data[0].length;
+            const min = Array(dims).fill(Infinity);
+            const max = Array(dims).fill(-Infinity);
+            for (const row of data) {
+                row.forEach((v, i) => {
+                    if (v < min[i]) min[i] = v;
+                    if (v > max[i]) max[i] = v;
+                });
+            }
+            return { min, max };
+        }
+
+        function normalizeRow(row, min, max) {
+            return row.map((v, i) =>
+                // avoid division by zero if max==min
+                max[i] === min[i] ? 0 : (v - min[i]) / (max[i] - min[i])
+            );
+        }
+
+        function denormalizeValue(yNorm, min, max) {
+            return yNorm * (max - min) + min;
+        }
+
+        const X = Xdata;
+        const Y = Ydata;
+
+        // compute min/max for each column
+        const { min: Xmin, max: Xmax } = computeMinMax(X);
+        const { min: YminArr, max: YmaxArr } = computeMinMax(Y);
+        // since Y is 1-D target, grab scalars
+        const Ymin = YminArr[0], Ymax = YmaxArr[0];
+
+        // normalize data into [0,1]
+        const Xnorm = X.map(row => normalizeRow(row, Xmin, Xmax));
+        const Ynorm = Y.map(row => [normalizeRow(row, YminArr, YmaxArr)[0]]);
+
+        await FlexibleNN.load8bitBinModelToIndexedDB('my-trained-model_8bit.bin', 'myModel8bit');
+        const loadedModel = await FlexibleNN.loadModel('myModel8bit');
+
+        let index = 0;
+        let realValues = [];
+        let predictedValues = [];
+        for (const rawRow of X) {
+            const normRow = normalizeRow(rawRow, Xmin, Xmax);
+            const predNorm = loadedModel.predict(normRow)[0];
+            const pred = denormalizeValue(predNorm, Ymin, Ymax);
+            console.log(rawRow, "→", pred.toFixed(4) + ' diff: ' + Math.abs(Y[index] - pred.toFixed(4)));
+            realValues.push(Y[index][0]); // If Y is [ [val1], [val2], ... ]
+            predictedValues.push(pred);
+            index++;
+        }
+
+        const ctx = document.getElementById('predictionChart').getContext('2d');
+        const data = {
+            labels: realValues.map((_, i) => i + 1), // e.g. 1, 2, 3, ...
+            datasets: [
+                {
+                    label: 'Real Values',
+                    data: realValues,
+                    borderColor: 'blue',
+                    backgroundColor: 'blue',
+                    pointRadius: 2,
+                    fill: false,
+                    tension: 0.1,
+                },
+                {
+                    label: 'Predictions',
+                    data: predictedValues,
+                    borderColor: 'red',
+                    backgroundColor: 'red',
+                    pointRadius: 2,
+                    fill: false,
+                    tension: 0.1,
+                }
+            ]
+        };
+        const config = {
+            type: 'line', // or 'scatter'
+            data: data,
+            options: {
+                responsive: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Model Predictions vs Real Values'
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Sample Index'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Value'
+                        }
+                    }
+                }
+            }
+        };
+
+        const myChart = new Chart(ctx, config);
+    </script>
+</body>
+
+</html>

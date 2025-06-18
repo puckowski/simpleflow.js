@@ -184,6 +184,68 @@ class FlexibleNN {
         });
     }
 
+    // Add this static method to FlexibleNN
+    static async load8bitBinModelToIndexedDB(url, key) {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Failed to fetch model: ${resp.status}`);
+        const arrBuf = await resp.arrayBuffer();
+
+        let view = new DataView(arrBuf);
+        let offset = 0;
+        let metaLen = view.getUint32(offset, /*littleEndian=*/true); offset += 4;
+        let metaStr = new TextDecoder().decode(
+            new Uint8Array(arrBuf, offset, metaLen)
+        ); offset += metaLen;
+        const meta = JSON.parse(metaStr);
+
+        let weights = [], biases = [];
+        for (let l = 0; l < meta.layerSizes.length - 1; ++l) {
+            let inSize = meta.layerSizes[l], outSize = meta.layerSizes[l + 1];
+            let wLen = inSize * outSize, bLen = outSize;
+
+            // Weights
+            let wInt8 = new Int8Array(arrBuf, offset, wLen); offset += wLen;
+            let [wMin, wMax] = meta.weightsMinMax[l];
+            let wMat = [];
+            for (let i = 0; i < outSize; ++i) {
+                let row = [];
+                for (let j = 0; j < inSize; ++j) {
+                    let idx = i * inSize + j;
+                    let q = wInt8[idx] + 128; // map back to 0-255
+                    let v = wMin + (wMax - wMin) * (q / 255);
+                    row.push(v);
+                }
+                wMat.push(row);
+            }
+            weights.push(wMat);
+
+            // Biases
+            let bInt8 = new Int8Array(arrBuf, offset, bLen); offset += bLen;
+            let [bMin, bMax] = meta.biasesMinMax[l];
+            let bVec = [];
+            for (let i = 0; i < bLen; ++i) {
+                let q = bInt8[i] + 128;
+                let v = bMin + (bMax - bMin) * (q / 255);
+                bVec.push(v);
+            }
+            biases.push(bVec);
+        }
+
+        const modelData = {
+            ...meta,
+            weights,
+            biases,
+        };
+
+        const db = await FlexibleNN._openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('models', 'readwrite');
+            tx.objectStore('models').put(modelData, key);
+            tx.oncomplete = () => { db.close(); resolve(true); };
+            tx.onerror = (e) => { db.close(); reject(e); };
+        });
+    }
+
     static async loadBinModelToIndexedDB(url, key) {
         // 1. Fetch file as text
         const resp = await fetch(url);
