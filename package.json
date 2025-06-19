@@ -1,0 +1,22 @@
+{
+  "name": "simpleflow.js",
+  "version": "0.1.0",
+  "description": "Neural network training and prediction",
+  "main": "simpleflow.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "terser simpleflow.js -c -m -o simpleflow.min.js"
+  },
+  "keywords": [
+    "ai",
+    "machine",
+    "learning",
+    "neural",
+    "networks"
+  ],
+  "author": "Daniel Puckowski",
+  "license": "MIT",
+  "dependencies": {
+    "terser": "^5.43.1"
+  }
+}
