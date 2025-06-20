@@ -509,3 +509,6 @@ class FlexibleNNBuilder {
         return new FlexibleNN(this.config);
     }
 }
+
+window.FlexibleNN = FlexibleNN;
+window.FlexibleNNBuilder = FlexibleNNBuilder;
