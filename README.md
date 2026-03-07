@@ -1,51 +1,113 @@
 # simpleflow.js
 
-JavaScript library for training and deploying ML models
+simpleflow.js is a lightweight browser-first neural network utility for training, prediction, and IndexedDB model persistence.
 
-Regression (unbounded):
+## Quick Start
+
+Include [simpleflow.js](simpleflow.js) in a page, then create a model with `FlexibleNNBuilder`.
+
+### Regression (unbounded output)
 
 ```javascript
 const nn = new FlexibleNNBuilder()
   .withLayerSizes([3, 10, 1])
+  .withLearningRate(0.01)
   .withActivation('relu')
-  .withOutputActivation() // linear by default
-  .build();
-Regression (bounded 0–1):
+  .build(); // output is linear by default
 ```
 
-```javascript
-const nn = new FlexibleNNBuilder()
-  .withLayerSizes([3, 10, 1])
-  .withActivation('relu')
-  .withOutputActivation('sigmoid')
-  .build();
-Classification (2-class):
-```
+### Regression (bounded 0..1)
 
 ```javascript
 const nn = new FlexibleNNBuilder()
   .withLayerSizes([3, 10, 1])
+  .withLearningRate(0.01)
   .withActivation('relu')
   .withOutputActivation('sigmoid')
   .build();
-Classification (multi-class, 3 classes):
 ```
+
+### Binary classification
+
+```javascript
+const nn = new FlexibleNNBuilder()
+  .withLayerSizes([3, 10, 1])
+  .withLearningRate(0.01)
+  .withActivation('relu')
+  .withOutputActivation('sigmoid')
+  .build();
+
+const probability = nn.predict([0.3, -1.2, 0.7])[0];
+const predictedLabel = probability >= 0.5 ? 1 : 0;
+```
+
+### Multi-class classification (argmax over linear logits)
 
 ```javascript
 const nn = new FlexibleNNBuilder()
   .withLayerSizes([3, 10, 3])
+  .withLearningRate(0.01)
   .withActivation('relu')
-  .withOutputActivation((arr) => softmax(arr), null) // softmax over whole output
-  .build();
+  .build(); // linear output layer
+
+const logits = nn.predict([0.3, -1.2, 0.7]);
+const predictedClass = logits.indexOf(Math.max(...logits));
 ```
 
-Note: For softmax, you’ll need to handle it as a vector function, not per-neuron!
+> Note: output activation is currently applied element-wise. Full vector softmax is not built into the forward pass.
 
-# Loading Pre-trained Models
+## Training
 
 ```javascript
-// Load foo.bin into IndexedDB under the key "foo"
-await loadBinModelToIndexedDB('/models/foo.bin', 'foo');
-// Now you can use FlexibleNN.loadModel('foo') as usual
+const X = [
+  [0, 0, 0],
+  [0, 1, 0],
+  [1, 0, 1],
+  [1, 1, 1],
+];
+
+const Y = [
+  [0],
+  [0],
+  [1],
+  [1],
+];
+
+nn.train(X, Y, 200);
+```
+
+## Save and Load Models
+
+### Save a trained model to IndexedDB
+
+```javascript
+await nn.saveModel('my-model');
+```
+
+### Load a model from IndexedDB
+
+```javascript
+const loaded = await FlexibleNN.loadModel('my-model');
+const out = loaded.predict([0.1, 0.2, 0.3]);
+```
+
+### Import a model file from URL into IndexedDB
+
+```javascript
+await FlexibleNN.loadBinModelToIndexedDB('/models/foo.bin', 'foo');
 const model = await FlexibleNN.loadModel('foo');
 ```
+
+### Export a model from IndexedDB as .bin
+
+```javascript
+await FlexibleNN.exportModelToBinFile({
+  key: 'foo',
+  quantized: true,
+  bits: 8,
+});
+```
+
+## Full API Specification
+
+See [SIMPLEFLOW_SPEC.md](SIMPLEFLOW_SPEC.md) for a complete API and data format reference.
