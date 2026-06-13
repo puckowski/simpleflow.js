@@ -115,6 +115,8 @@ Performs one backprop update using MSE gradient style:
 Trains sample-by-sample (online SGD) over `epochs`.
 
 - Loss printed each epoch as mean MSE across samples.
+- Optional fourth argument: `{ logEvery?: number }`
+- `logEvery: 0` disables epoch logging.
 
 ### `predict(x: number[]): number[]`
 Alias for `forward(x)`.
@@ -139,6 +141,15 @@ Available in [simpleflow.webgpu.js](simpleflow.webgpu.js).
 
 - Uses the GPU forward path when available.
 - Reuses the same JavaScript backprop/update logic to preserve training behavior.
+- Default execution mode is `auto`, which prefers CPU forward passes during training to avoid GPU-to-CPU synchronization on every sample.
+- Optional override: `trainGPU(X, Y, epochs, { execution: 'cpu' | 'gpu' | 'auto' })`.
+- Optional logging control: `trainGPU(X, Y, epochs, { logEvery?: number })`.
+- `logEvery: 0` disables epoch logging.
+
+### `withTrainingExecution(mode: 'auto' | 'cpu' | 'gpu')`
+Available in [simpleflow.webgpu.js](simpleflow.webgpu.js).
+
+- Sets the default training execution mode used by `trainGPU()`.
 
 ### `getGPUStatus(): { supported: boolean, initialized: boolean, reason: string | null }`
 Available in [simpleflow.webgpu.js](simpleflow.webgpu.js).

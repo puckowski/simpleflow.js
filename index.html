@@ -41,6 +41,26 @@
             return yNorm * (max - min) + min;
         }
 
+        function formatTarget(row) {
+            return Array.isArray(row) ? row[0] : row;
+        }
+
+        async function logPredictions(model, rows, targets, xMin, xMax, yMin, yMax, label) {
+            console.log(label);
+
+            let index = 0;
+            for (const rawRow of rows) {
+                const normRow = normalizeRow(rawRow, xMin, xMax);
+                const predNorm = (await model.predictGPU(normRow))[0];
+                const pred = denormalizeValue(predNorm, yMin, yMax);
+                const expected = formatTarget(targets[index]);
+                const diff = Math.abs(expected - pred);
+
+                console.log(rawRow, '→', `${pred.toFixed(4)} diff: ${diff.toFixed(4)}`);
+                index++;
+            }
+        }
+
 
         document.getElementById('modelImport').addEventListener('change', async function (e) {
             const file = e.target.files[0];
@@ -49,15 +69,9 @@
                 alert('Model imported!');
 
                 const loadedModel = await FlexibleNN.loadModel("my-multivariate-model");
-
-                let index = 0;
-                for (const rawRow of X) {
-                    const normRow = normalizeRow(rawRow, Xmin, Xmax);
-                    const predNorm = loadedModel.predict(normRow)[0];
-                    const pred = denormalizeValue(predNorm, Ymin, Ymax);
-                    console.log(rawRow, "→", pred.toFixed(4) + ' diff: ' + Math.abs(Y[index] - pred.toFixed(4)));
-                    index++;
-                }
+                const gpuReady = await loadedModel.initializeGPU();
+                console.log('Imported model GPU status:', loadedModel.getGPUStatus(), 'ready:', gpuReady);
+                await logPredictions(loadedModel, X, Y, Xmin, Xmax, Ymin, Ymax, 'Imported model predictions (GPU inference when available):');
             }
         });
 
@@ -78,28 +92,25 @@
         // build, train, and save your model on normalized data:
         let builder = new FlexibleNNBuilder();
 
-        let model = builder
+        let model = await builder
             .withLayerSizes([3, 32, 32, 32, 1])
             .withLearningRate(0.01)
             .withActivation('clippedRelu', 1)
-            .build();
+            .withTrainingExecution('auto')
+            .buildGPU();
 
-        console.time('train');
-        model.train(Xnorm, Ynorm, 1000);
-        console.timeEnd('train');
+        console.log('Training model GPU status:', model.getGPUStatus());
+        console.log('Training mode: auto uses CPU-forward training to avoid GPU readback stalls, then uses GPU for inference.');
+
+        const trainStart = performance.now();
+        await model.trainGPU(Xnorm, Ynorm, 1000, { execution: 'auto', logEvery: 100 });
+        const trainMs = performance.now() - trainStart;
+        console.log(`Training time: ${trainMs.toFixed(2)}ms`);
+
         await model.saveModel("my-multivariate-model");
         await FlexibleNN.exportModelToBinFile({ key: 'my-multivariate-model', quantized: false });
 
-        // Example: check training-data predictions
-        let index = 0;
-        console.log("Training data predictions (de-normalized):");
-        for (const rawRow of X) {
-            const normRow = normalizeRow(rawRow, Xmin, Xmax);
-            const predNorm = model.predict(normRow)[0];
-            const pred = denormalizeValue(predNorm, Ymin, Ymax);
-            console.log(rawRow, "→", pred.toFixed(4) + ' diff: ' + Math.abs(Y[index] - pred.toFixed(4)));
-            index++;
-        }
+        await logPredictions(model, X, Y, Xmin, Xmax, Ymin, Ymax, 'Training data predictions (GPU inference when available):');
     </script>
 </body>
 

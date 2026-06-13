@@ -70,6 +70,7 @@ describe('simpleflow.webgpu.js', () => {
       .withLayerSizes([1, 1])
       .withLearningRate(0.1)
       .withActivation('relu')
+      .withTrainingExecution('cpu')
       .build();
 
     nn.weights = [[[0]]];
@@ -79,6 +80,7 @@ describe('simpleflow.webgpu.js', () => {
 
     expect(nn.weights[0][0][0]).toBeCloseTo(0.2, 8);
     expect(nn.biases[0][0]).toBeCloseTo(0.2, 8);
+    expect(nn.getGPUStatus().trainingExecution).toBe('cpu');
   });
 
   it('saves and reloads a model from IndexedDB', async () => {

@@ -26,6 +26,8 @@ It also adds async GPU-oriented helpers:
 
 If WebGPU is unavailable, the GPU helpers fall back to the CPU path and keep the same saved-model format used by [simpleflow.js](simpleflow.js).
 
+Training note: `trainGPU()` now defaults to `auto`, which prefers CPU forward passes during training because backprop still runs in JavaScript. That avoids a per-sample GPU readback bottleneck and is typically faster overall. You can override this with `withTrainingExecution('gpu')` or `trainGPU(X, Y, epochs, { execution: 'gpu' })`. You can also reduce console overhead with `trainGPU(X, Y, epochs, { logEvery: 100 })` or disable epoch logging with `logEvery: 0`.
+
 ## Quick Start
 
 Include [simpleflow.js](simpleflow.js) in a page, then create a model with `FlexibleNNBuilder`.

@@ -58,6 +58,7 @@ class FlexibleNN {
         this.outputActivationCap = config.outputActivationCap ?? 1.0;
         this.preferGPU = config.preferGPU ?? true;
         this.autoInitGPU = config.autoInitGPU ?? false;
+        this.trainingExecution = config.trainingExecution ?? 'auto';
         this._gpuContext = null;
         this._gpuUnsupportedReason = null;
         this._gpuInitializationPromise = null;
@@ -319,6 +320,22 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
     }
 
+    _resolveTrainingExecutionMode(mode, gpuReady) {
+        if (mode === 'cpu') return 'cpu';
+        if (mode === 'gpu') return gpuReady ? 'gpu' : 'cpu';
+
+        // Auto mode prefers CPU forward during training because backprop still runs in JS.
+        // Pulling every activation back from the GPU each sample is usually slower.
+        return 'cpu';
+    }
+
+    _shouldLogEpoch(epochIndex, totalEpochs, logEvery) {
+        if (!Number.isFinite(logEvery) || logEvery <= 0) return false;
+        if (logEvery === 1) return true;
+        if ((epochIndex + 1) % logEvery === 0) return true;
+        return epochIndex === totalEpochs - 1;
+    }
+
     forward(x) {
         this.zs = [];
         this.as = [x.slice()];
@@ -427,7 +444,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         this._markGPUDirty();
     }
 
-    train(X, Y, epochs = 100) {
+    train(X, Y, epochs = 100, options = {}) {
+        const logEvery = options.logEvery ?? 1;
         for (let epoch = 0; epoch < epochs; ++epoch) {
             let totalLoss = 0;
             for (let i = 0; i < X.length; ++i) {
@@ -436,20 +454,34 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 totalLoss += loss;
                 this.backward(Y[i]);
             }
-            console.log(`Epoch ${epoch + 1} - Loss: ${(totalLoss / X.length).toFixed(12)}`);
+            if (this._shouldLogEpoch(epoch, epochs, logEvery)) {
+                console.log(`Epoch ${epoch + 1} - Loss: ${(totalLoss / X.length).toFixed(12)}`);
+            }
         }
     }
 
-    async trainGPU(X, Y, epochs = 100) {
+    async trainGPU(X, Y, epochs = 100, options = {}) {
+        const requestedMode = options.execution ?? this.trainingExecution;
+        const logEvery = options.logEvery ?? 1;
+        const gpuReady = await this.initializeGPU();
+        const trainingMode = this._resolveTrainingExecutionMode(requestedMode, gpuReady);
+        const useGPUForward = trainingMode === 'gpu';
+
         for (let epoch = 0; epoch < epochs; ++epoch) {
             let totalLoss = 0;
             for (let i = 0; i < X.length; ++i) {
-                const pred = await this.forwardGPU(X[i]);
+                const pred = useGPUForward ? await this.forwardGPU(X[i]) : this.forward(X[i]);
                 const loss = pred.reduce((s, v, j) => s + (v - Y[i][j]) ** 2, 0) / pred.length;
                 totalLoss += loss;
                 this.backward(Y[i]);
             }
-            console.log(`Epoch ${epoch + 1} - Loss: ${(totalLoss / X.length).toFixed(12)}`);
+            if (this._shouldLogEpoch(epoch, epochs, logEvery)) {
+                console.log(`Epoch ${epoch + 1} - Loss: ${(totalLoss / X.length).toFixed(12)}`);
+            }
+        }
+
+        if (gpuReady && !useGPUForward) {
+            await this._syncGPUWeights();
         }
     }
 
@@ -466,6 +498,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             supported: FlexibleNN.isWebGPUSupported(),
             initialized: !!this._gpuContext,
             reason: this._gpuUnsupportedReason,
+            trainingExecution: this.trainingExecution,
         };
     }
 
@@ -814,6 +847,11 @@ class FlexibleNNBuilder {
 
     withAutoInitGPU(autoInitGPU = true) {
         this.config.autoInitGPU = autoInitGPU;
+        return this;
+    }
+
+    withTrainingExecution(mode = 'auto') {
+        this.config.trainingExecution = mode;
         return this;
     }
 
