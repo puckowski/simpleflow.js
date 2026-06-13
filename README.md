@@ -2,6 +2,30 @@
 
 simpleflow.js is a lightweight browser-first neural network utility for training, prediction, and IndexedDB model persistence.
 
+## WebGPU Build
+
+Load [simpleflow.webgpu.js](simpleflow.webgpu.js) when you want the same model format and builder API with optional WebGPU acceleration.
+
+```html
+<script src="./simpleflow.webgpu.js"></script>
+```
+
+The WebGPU build preserves the synchronous CPU methods:
+
+- `build()`
+- `predict(x)`
+- `train(X, Y, epochs)`
+
+It also adds async GPU-oriented helpers:
+
+- `await model.initializeGPU()`
+- `await model.predictGPU(x)`
+- `await model.trainGPU(X, Y, epochs)`
+- `model.getGPUStatus()`
+- `await new FlexibleNNBuilder().withLayerSizes([...]).buildGPU()`
+
+If WebGPU is unavailable, the GPU helpers fall back to the CPU path and keep the same saved-model format used by [simpleflow.js](simpleflow.js).
+
 ## Quick Start
 
 Include [simpleflow.js](simpleflow.js) in a page, then create a model with `FlexibleNNBuilder`.
@@ -107,6 +131,22 @@ await FlexibleNN.exportModelToBinFile({
   bits: 8,
 });
 ```
+
+## WebGPU Example
+
+```javascript
+const nn = await new FlexibleNNBuilder()
+  .withLayerSizes([3, 10, 1])
+  .withLearningRate(0.01)
+  .withActivation('relu')
+  .withOutputActivation('sigmoid')
+  .buildGPU();
+
+const out = await nn.predictGPU([0.1, 0.2, 0.3]);
+console.log(nn.getGPUStatus(), out);
+```
+
+Current note: the WebGPU path accelerates forward execution. Parameter updates still reuse the same JavaScript backprop logic so model behavior stays aligned with the original build.
 
 ## Full API Specification
 

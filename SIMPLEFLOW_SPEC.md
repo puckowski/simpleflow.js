@@ -2,12 +2,19 @@
 
 This document describes the current runtime behavior and public API exposed by [simpleflow.js](simpleflow.js).
 
+The repository also includes [simpleflow.webgpu.js](simpleflow.webgpu.js), which keeps the same saved-model format and core builder surface while adding optional async WebGPU execution helpers.
+
 ## 1. Global Exports
 
 When loaded in a browser page, [simpleflow.js](simpleflow.js) exposes:
 
 - `window.FlexibleNN`
 - `window.FlexibleNNBuilder`
+
+When loaded instead, [simpleflow.webgpu.js](simpleflow.webgpu.js) exposes the same globals plus aliases:
+
+- `window.FlexibleNNWebGPU`
+- `window.FlexibleNNWebGPUBuilder`
 
 ## 2. Model Shape and Layer Rules
 
@@ -80,6 +87,13 @@ Builds the network.
 
 Throws if `layerSizes` is missing.
 
+### `buildGPU(): Promise<FlexibleNN>`
+Available in [simpleflow.webgpu.js](simpleflow.webgpu.js).
+
+- Builds the network.
+- Attempts GPU initialization before resolving.
+- Still resolves with a usable model if WebGPU is unavailable.
+
 ## 5. FlexibleNN Instance API
 
 ### `forward(x: number[]): number[]`
@@ -104,6 +118,34 @@ Trains sample-by-sample (online SGD) over `epochs`.
 
 ### `predict(x: number[]): number[]`
 Alias for `forward(x)`.
+
+### `initializeGPU(): Promise<boolean>`
+Available in [simpleflow.webgpu.js](simpleflow.webgpu.js).
+
+- Returns `true` when a WebGPU device and per-layer pipelines are ready.
+- Returns `false` when WebGPU is unavailable or when the model uses custom activations that cannot be compiled to WGSL.
+
+### `forwardGPU(x: number[]): Promise<number[]>`
+Available in [simpleflow.webgpu.js](simpleflow.webgpu.js).
+
+- Runs the forward pass on WebGPU when initialized.
+- Falls back to CPU `forward()` when WebGPU is unavailable.
+
+### `predictGPU(x: number[]): Promise<number[]>`
+Async alias for `forwardGPU(x)`.
+
+### `trainGPU(X: number[][], Y: number[][], epochs = 100): Promise<void>`
+Available in [simpleflow.webgpu.js](simpleflow.webgpu.js).
+
+- Uses the GPU forward path when available.
+- Reuses the same JavaScript backprop/update logic to preserve training behavior.
+
+### `getGPUStatus(): { supported: boolean, initialized: boolean, reason: string | null }`
+Available in [simpleflow.webgpu.js](simpleflow.webgpu.js).
+
+- Reports whether WebGPU exists in the environment.
+- Reports whether the model finished GPU initialization.
+- Includes the latest fallback reason when GPU execution is unavailable.
 
 ### `saveModel(key: string): Promise<boolean>`
 Stores model metadata + parameters in IndexedDB database `SimpleNN_DB`, store `models`.

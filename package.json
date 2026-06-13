@@ -6,7 +6,9 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "terser simpleflow.js -c -m -o simpleflow.min.js"
+    "build": "terser simpleflow.js -c -m -o simpleflow.min.js",
+    "build:webgpu": "terser simpleflow.webgpu.js -c -m -o simpleflow.webgpu.min.js",
+    "build:all": "npm run build && npm run build:webgpu"
   },
   "keywords": [
     "ai",

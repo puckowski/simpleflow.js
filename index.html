@@ -1,7 +1,7 @@
 <html>
 
 <head>
-    <script src="./simpleflow.js"></script>
+    <script src="./simpleflow.webgpu.js"></script>
 </head>
 
 <body>
@@ -84,7 +84,9 @@
             .withActivation('clippedRelu', 1)
             .build();
 
+        console.time('train');
         model.train(Xnorm, Ynorm, 1000);
+        console.timeEnd('train');
         await model.saveModel("my-multivariate-model");
         await FlexibleNN.exportModelToBinFile({ key: 'my-multivariate-model', quantized: false });
 
