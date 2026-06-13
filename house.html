@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>House Price Trainer</title>
+    <script src="./simpleflow.webgpu.js"></script>
+    <script src="./chart.js"></script>
+    <style>
+        :root {
+            --bg: #f4efe6;
+            --bg-accent: #e3d6c2;
+            --panel: rgba(255, 252, 246, 0.84);
+            --panel-border: rgba(74, 53, 34, 0.16);
+            --text: #2e241a;
+            --muted: #6e5c4b;
+            --accent: #9f4f2d;
+            --accent-strong: #6e2e16;
+            --chart-a: #9f4f2d;
+            --chart-b: #26667f;
+            --success: #2f6f4f;
+            --shadow: 0 24px 80px rgba(66, 47, 28, 0.12);
+            --radius: 24px;
+            --mono: "IBM Plex Mono", "Consolas", monospace;
+            --display: Georgia, "Times New Roman", serif;
+            --body: "Segoe UI", sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: var(--body);
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(159, 79, 45, 0.22), transparent 34%),
+                radial-gradient(circle at 90% 10%, rgba(38, 102, 127, 0.16), transparent 26%),
+                linear-gradient(145deg, var(--bg), #efe6d8 58%, #f8f5ef);
+        }
+
+        .page {
+            width: min(1280px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 32px 0 56px;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: 1.3fr 0.9fr;
+            gap: 24px;
+            align-items: stretch;
+            margin-bottom: 24px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(10px);
+        }
+
+        .hero-copy {
+            padding: 34px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .hero-copy::after {
+            content: "";
+            position: absolute;
+            right: -32px;
+            bottom: -32px;
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(159, 79, 45, 0.24), transparent 68%);
+        }
+
+        .eyebrow {
+            font-family: var(--mono);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: var(--accent-strong);
+            margin-bottom: 16px;
+        }
+
+        h1 {
+            margin: 0 0 16px;
+            font-family: var(--display);
+            font-size: clamp(2.3rem, 5vw, 4.3rem);
+            line-height: 0.95;
+            max-width: 12ch;
+        }
+
+        .lede {
+            margin: 0;
+            max-width: 62ch;
+            font-size: 1rem;
+            line-height: 1.7;
+            color: var(--muted);
+        }
+
+        .hero-controls {
+            padding: 24px;
+            display: grid;
+            gap: 16px;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .field {
+            display: grid;
+            gap: 6px;
+        }
+
+        .field label {
+            font-size: 0.84rem;
+            color: var(--muted);
+        }
+
+        .field input,
+        .field select,
+        .field button,
+        .field textarea {
+            width: 100%;
+            border: 1px solid rgba(74, 53, 34, 0.18);
+            border-radius: 14px;
+            padding: 12px 14px;
+            background: rgba(255, 255, 255, 0.8);
+            color: var(--text);
+            font: inherit;
+        }
+
+        .field textarea {
+            min-height: 140px;
+            resize: vertical;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .actions button {
+            cursor: pointer;
+            transition: transform 140ms ease, background-color 140ms ease, color 140ms ease;
+        }
+
+        .primary {
+            background: var(--accent);
+            color: #fff7f1;
+            border: none;
+        }
+
+        .primary:hover {
+            transform: translateY(-1px);
+            background: var(--accent-strong);
+        }
+
+        .secondary {
+            background: rgba(255, 255, 255, 0.72);
+        }
+
+        .status {
+            padding: 12px 14px;
+            border-radius: 16px;
+            background: rgba(255, 248, 242, 0.86);
+            color: var(--muted);
+            line-height: 1.5;
+            min-height: 48px;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .metric {
+            padding: 20px;
+        }
+
+        .metric-label {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .metric-value {
+            margin-top: 10px;
+            font-size: clamp(1.4rem, 2vw, 2rem);
+            font-family: var(--display);
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 24px;
+        }
+
+        .chart-panel,
+        .prediction-panel,
+        .log-panel {
+            padding: 22px;
+        }
+
+        .chart-shell {
+            position: relative;
+            height: 360px;
+            min-height: 360px;
+            max-height: 360px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .chart-shell canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        h2 {
+            margin: 0 0 14px;
+            font-family: var(--display);
+            font-size: 1.5rem;
+        }
+
+        .subtle {
+            margin: 0 0 18px;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .prediction-output {
+            padding: 18px;
+            border-radius: 20px;
+            background: linear-gradient(180deg, rgba(255, 247, 241, 0.9), rgba(255, 255, 255, 0.7));
+            border: 1px solid rgba(74, 53, 34, 0.12);
+        }
+
+        .price {
+            font-family: var(--display);
+            font-size: 2.2rem;
+            margin: 8px 0 4px;
+            color: var(--accent-strong);
+        }
+
+        .prediction-meta {
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .scroll {
+            overflow: auto;
+            max-height: 320px;
+            border-radius: 18px;
+            border: 1px solid rgba(74, 53, 34, 0.12);
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+        }
+
+        th,
+        td {
+            padding: 12px 14px;
+            text-align: left;
+            border-bottom: 1px solid rgba(74, 53, 34, 0.08);
+            white-space: nowrap;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: rgba(247, 240, 230, 0.96);
+            color: var(--accent-strong);
+            z-index: 1;
+        }
+
+        pre {
+            margin: 0;
+            padding: 18px;
+            border-radius: 18px;
+            background: #2a2119;
+            color: #efe3d5;
+            overflow: auto;
+            font-family: var(--mono);
+            font-size: 0.84rem;
+            line-height: 1.5;
+        }
+
+        .pulse {
+            animation: pulse 1.7s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.56; }
+        }
+
+        @media (max-width: 980px) {
+            .hero,
+            .content-grid,
+            .metrics {
+                grid-template-columns: 1fr;
+            }
+
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .chart-shell {
+                height: 300px;
+                min-height: 300px;
+                max-height: 300px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="page">
+        <section class="hero">
+            <div class="panel hero-copy">
+                <div class="eyebrow">simpleflow.webgpu house lab</div>
+                <h1>Train a house price model in the browser.</h1>
+                <p class="lede">
+                    This page loads <strong>train.csv</strong>, encodes the Ames housing dataset, trains a regression model with
+                    the WebGPU build of SimpleFlow, and runs predictions with GPU inference when the browser supports it.
+                </p>
+            </div>
+
+            <div class="panel hero-controls">
+                <div class="controls-grid">
+                    <div class="field">
+                        <label for="epochsInput">Epochs</label>
+                        <input id="epochsInput" type="number" min="1" max="5000" step="1" value="350" />
+                    </div>
+                    <div class="field">
+                        <label for="learningRateInput">Learning Rate</label>
+                        <input id="learningRateInput" type="number" min="0.0001" max="1" step="0.0001" value="0.01" />
+                    </div>
+                    <div class="field">
+                        <label for="hiddenWidthInput">Hidden Width</label>
+                        <input id="hiddenWidthInput" type="number" min="8" max="256" step="8" value="96" />
+                    </div>
+                    <div class="field">
+                        <label for="splitInput">Train Split</label>
+                        <input id="splitInput" type="number" min="0.5" max="0.95" step="0.01" value="0.8" />
+                    </div>
+                    <div class="field">
+                        <label for="executionSelect">Training Execution</label>
+                        <select id="executionSelect">
+                            <option value="auto" selected>auto</option>
+                            <option value="cpu">cpu</option>
+                            <option value="gpu">gpu</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="logEveryInput">Epoch Log Every</label>
+                        <input id="logEveryInput" type="number" min="0" max="1000" step="1" value="50" />
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button id="trainButton" class="primary">Train Model</button>
+                    <button id="predictButton" class="secondary" disabled>Predict Validation Sample</button>
+                </div>
+
+                <div id="status" class="status">Loading dataset…</div>
+            </div>
+        </section>
+
+        <section class="metrics">
+            <div class="panel metric">
+                <div class="metric-label">Rows</div>
+                <div id="rowsMetric" class="metric-value">-</div>
+            </div>
+            <div class="panel metric">
+                <div class="metric-label">Features</div>
+                <div id="featuresMetric" class="metric-value">-</div>
+            </div>
+            <div class="panel metric">
+                <div class="metric-label">Training Time</div>
+                <div id="timeMetric" class="metric-value">-</div>
+            </div>
+            <div class="panel metric">
+                <div class="metric-label">Validation RMSE</div>
+                <div id="rmseMetric" class="metric-value">-</div>
+            </div>
+        </section>
+
+        <section class="content-grid">
+            <div class="panel chart-panel">
+                <h2>Validation Predictions</h2>
+                <p class="subtle">The scatter compares predicted prices to actual sale prices on the validation split.</p>
+                <div class="chart-shell">
+                    <canvas id="predictionChart"></canvas>
+                </div>
+            </div>
+
+            <div class="panel prediction-panel">
+                <h2>Sample Inference</h2>
+                <p class="subtle">Pick a validation row and run prediction through <strong>predictGPU()</strong>.</p>
+                <div class="field">
+                    <label for="sampleSelect">Validation Row</label>
+                    <select id="sampleSelect"></select>
+                </div>
+                <div class="prediction-output">
+                    <div class="metric-label">Predicted Price</div>
+                    <div id="predictedPrice" class="price">-</div>
+                    <div id="predictionMeta" class="prediction-meta">Train the model to enable inference.</div>
+                </div>
+
+                <h2 style="margin-top: 22px;">Top Validation Rows</h2>
+                <div class="scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Id</th>
+                                <th>Actual</th>
+                                <th>Predicted</th>
+                                <th>Abs Error</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel log-panel" style="margin-top: 24px;">
+            <h2>Training Log</h2>
+            <p class="subtle">Useful details from dataset preparation, GPU status, and the last training run.</p>
+            <pre id="runLog">Waiting for dataset…</pre>
+        </section>
+    </main>
+
+    <script type="module">
+        const state = {
+            dataset: null,
+            model: null,
+            validationRows: [],
+            chart: null,
+        };
+
+        const rowsMetric = document.getElementById('rowsMetric');
+        const featuresMetric = document.getElementById('featuresMetric');
+        const timeMetric = document.getElementById('timeMetric');
+        const rmseMetric = document.getElementById('rmseMetric');
+        const statusEl = document.getElementById('status');
+        const runLogEl = document.getElementById('runLog');
+        const trainButton = document.getElementById('trainButton');
+        const predictButton = document.getElementById('predictButton');
+        const sampleSelect = document.getElementById('sampleSelect');
+        const resultsBody = document.getElementById('resultsBody');
+        const predictedPriceEl = document.getElementById('predictedPrice');
+        const predictionMetaEl = document.getElementById('predictionMeta');
+
+        const TARGET_COLUMN = 'SalePrice';
+        const ID_COLUMN = 'Id';
+        const MAX_CHART_POINTS = 240;
+
+        function setStatus(message, isBusy = false) {
+            statusEl.textContent = message;
+            statusEl.classList.toggle('pulse', isBusy);
+        }
+
+        function logBlock(title, payload) {
+            const divider = `\n\n[${new Date().toLocaleTimeString()}] ${title}\n`;
+            const content = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+            runLogEl.textContent += divider + content;
+            runLogEl.scrollTop = runLogEl.scrollHeight;
+        }
+
+        function parseCsv(text) {
+            const lines = text.trim().split(/\r?\n/);
+            const headers = lines[0].split(',');
+            const rows = [];
+
+            for (let index = 1; index < lines.length; index++) {
+                const values = lines[index].split(',');
+                if (values.length !== headers.length) continue;
+
+                const row = {};
+                for (let col = 0; col < headers.length; col++) {
+                    row[headers[col]] = values[col];
+                }
+                rows.push(row);
+            }
+
+            return { headers, rows };
+        }
+
+        function isMissing(value) {
+            return value === '' || value === 'NA' || value === 'NaN' || value == null;
+        }
+
+        function isNumericColumn(rows, column) {
+            for (const row of rows) {
+                const value = row[column];
+                if (isMissing(value)) continue;
+                return Number.isFinite(Number(value));
+            }
+            return true;
+        }
+
+        function mean(values) {
+            if (!values.length) return 0;
+            return values.reduce((sum, value) => sum + value, 0) / values.length;
+        }
+
+        function computeMinMax(data) {
+            const dims = data[0].length;
+            const min = Array(dims).fill(Infinity);
+            const max = Array(dims).fill(-Infinity);
+
+            for (const row of data) {
+                row.forEach((value, index) => {
+                    if (value < min[index]) min[index] = value;
+                    if (value > max[index]) max[index] = value;
+                });
+            }
+
+            return { min, max };
+        }
+
+        function normalizeRow(row, min, max) {
+            return row.map((value, index) => {
+                if (max[index] === min[index]) return 0;
+                return (value - min[index]) / (max[index] - min[index]);
+            });
+        }
+
+        function denormalizeValue(value, min, max) {
+            return value * (max - min) + min;
+        }
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                maximumFractionDigits: 0,
+            }).format(value);
+        }
+
+        function rmse(actuals, predictions) {
+            if (!actuals.length) return 0;
+            const mse = actuals.reduce((sum, actual, index) => {
+                const diff = actual - predictions[index];
+                return sum + diff * diff;
+            }, 0) / actuals.length;
+            return Math.sqrt(mse);
+        }
+
+        function buildDataset(parsed) {
+            const featureColumns = parsed.headers.filter((header) => header !== TARGET_COLUMN && header !== ID_COLUMN);
+            const numericColumns = featureColumns.filter((column) => isNumericColumn(parsed.rows, column));
+            const categoricalColumns = featureColumns.filter((column) => !numericColumns.includes(column));
+
+            const numericDefaults = Object.fromEntries(
+                numericColumns.map((column) => {
+                    const values = parsed.rows
+                        .map((row) => Number(row[column]))
+                        .filter((value) => Number.isFinite(value));
+                    return [column, mean(values)];
+                })
+            );
+
+            const categoricalMaps = Object.fromEntries(
+                categoricalColumns.map((column) => {
+                    const categories = ['NA'];
+                    for (const row of parsed.rows) {
+                        const raw = isMissing(row[column]) ? 'NA' : row[column];
+                        if (!categories.includes(raw)) categories.push(raw);
+                    }
+                    return [column, new Map(categories.map((category, index) => [category, index]))];
+                })
+            );
+
+            const featureNames = [
+                ...numericColumns,
+                ...categoricalColumns,
+            ];
+
+            const X = [];
+            const Y = [];
+            const ids = [];
+
+            for (const row of parsed.rows) {
+                const features = [];
+
+                for (const column of numericColumns) {
+                    const value = Number(row[column]);
+                    features.push(Number.isFinite(value) ? value : numericDefaults[column]);
+                }
+
+                for (const column of categoricalColumns) {
+                    const key = isMissing(row[column]) ? 'NA' : row[column];
+                    features.push(categoricalMaps[column].get(key) ?? 0);
+                }
+
+                X.push(features);
+                Y.push([Number(row[TARGET_COLUMN])]);
+                ids.push(row[ID_COLUMN]);
+            }
+
+            const { min: xMin, max: xMax } = computeMinMax(X);
+            const { min: yMinArr, max: yMaxArr } = computeMinMax(Y);
+            const yMin = yMinArr[0];
+            const yMax = yMaxArr[0];
+
+            return {
+                rows: parsed.rows,
+                ids,
+                featureNames,
+                numericColumns,
+                categoricalColumns,
+                X,
+                Y,
+                xMin,
+                xMax,
+                yMin,
+                yMax,
+            };
+        }
+
+        function splitDataset(dataset, ratio) {
+            const pivot = Math.max(1, Math.min(dataset.X.length - 1, Math.floor(dataset.X.length * ratio)));
+
+            return {
+                trainX: dataset.X.slice(0, pivot),
+                trainY: dataset.Y.slice(0, pivot),
+                valX: dataset.X.slice(pivot),
+                valY: dataset.Y.slice(pivot),
+                valIds: dataset.ids.slice(pivot),
+            };
+        }
+
+        function populateSampleSelect(ids) {
+            sampleSelect.innerHTML = '';
+            ids.forEach((id, index) => {
+                const option = document.createElement('option');
+                option.value = String(index);
+                option.textContent = `Row ${index + 1} · Id ${id}`;
+                sampleSelect.appendChild(option);
+            });
+        }
+
+        function updateResultsTable(rows) {
+            resultsBody.innerHTML = '';
+
+            rows.slice(0, 25).forEach((row) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.id}</td>
+                    <td>${formatCurrency(row.actual)}</td>
+                    <td>${formatCurrency(row.predicted)}</td>
+                    <td>${formatCurrency(row.absError)}</td>
+                `;
+                resultsBody.appendChild(tr);
+            });
+        }
+
+        function buildChartSample(rows, maxPoints = MAX_CHART_POINTS) {
+            if (rows.length <= maxPoints) {
+                return rows.slice();
+            }
+
+            const sortedByActual = rows.slice().sort((left, right) => left.actual - right.actual);
+            const sample = [];
+            const step = (sortedByActual.length - 1) / (maxPoints - 1);
+
+            for (let index = 0; index < maxPoints; index++) {
+                const sourceIndex = Math.min(
+                    sortedByActual.length - 1,
+                    Math.round(index * step)
+                );
+                sample.push(sortedByActual[sourceIndex]);
+            }
+
+            return sample;
+        }
+
+        function drawChart(rows) {
+            const chartRows = buildChartSample(rows);
+            const ctx = document.getElementById('predictionChart').getContext('2d');
+            const data = {
+                datasets: [
+                    {
+                        label: `Validation sample (${chartRows.length}/${rows.length})`,
+                        data: chartRows.map((row) => ({ x: row.actual, y: row.predicted })),
+                        backgroundColor: 'rgba(159, 79, 45, 0.75)',
+                        borderColor: 'rgba(159, 79, 45, 1)',
+                        pointRadius: 3,
+                    },
+                    {
+                        label: 'Perfect fit',
+                        type: 'line',
+                        data: (() => {
+                            const values = chartRows.flatMap((row) => [row.actual, row.predicted]);
+                            const min = Math.min(...values);
+                            const max = Math.max(...values);
+                            return [{ x: min, y: min }, { x: max, y: max }];
+                        })(),
+                        borderColor: 'rgba(38, 102, 127, 0.9)',
+                        pointRadius: 0,
+                        borderWidth: 2,
+                    }
+                ]
+            };
+
+            const config = {
+                type: 'scatter',
+                data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    normalized: true,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#2e241a',
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Actual Sale Price',
+                                color: '#2e241a',
+                            },
+                            ticks: { color: '#6e5c4b' },
+                            grid: { color: 'rgba(74, 53, 34, 0.08)' },
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Predicted Sale Price',
+                                color: '#2e241a',
+                            },
+                            ticks: { color: '#6e5c4b' },
+                            grid: { color: 'rgba(74, 53, 34, 0.08)' },
+                        }
+                    }
+                }
+            };
+
+            if (state.chart) {
+                state.chart.destroy();
+            }
+            state.chart = new Chart(ctx, config);
+        }
+
+        async function predictValidationSample() {
+            if (!state.model || !state.validationRows.length) return;
+
+            const row = state.validationRows[Number(sampleSelect.value) || 0];
+            const normalized = normalizeRow(row.features, state.dataset.xMin, state.dataset.xMax);
+            const predictionNorm = (await state.model.predictGPU(normalized))[0];
+            const prediction = denormalizeValue(predictionNorm, state.dataset.yMin, state.dataset.yMax);
+            const error = Math.abs(row.actual - prediction);
+
+            predictedPriceEl.textContent = formatCurrency(prediction);
+            predictionMetaEl.textContent = `Id ${row.id} · actual ${formatCurrency(row.actual)} · abs error ${formatCurrency(error)}`;
+        }
+
+        async function trainModel() {
+            if (!state.dataset) return;
+
+            const epochs = Number(document.getElementById('epochsInput').value);
+            const learningRate = Number(document.getElementById('learningRateInput').value);
+            const hiddenWidth = Number(document.getElementById('hiddenWidthInput').value);
+            const splitRatio = Number(document.getElementById('splitInput').value);
+            const execution = document.getElementById('executionSelect').value;
+            const logEvery = Number(document.getElementById('logEveryInput').value);
+
+            const split = splitDataset(state.dataset, splitRatio);
+            const trainXNorm = split.trainX.map((row) => normalizeRow(row, state.dataset.xMin, state.dataset.xMax));
+            const trainYNorm = split.trainY.map((row) => [normalizeRow(row, [state.dataset.yMin], [state.dataset.yMax])[0]]);
+
+            setStatus('Training model…', true);
+            trainButton.disabled = true;
+            predictButton.disabled = true;
+
+            const model = await new FlexibleNNBuilder()
+                .withLayerSizes([state.dataset.featureNames.length, hiddenWidth, Math.max(16, Math.floor(hiddenWidth / 2)), 1])
+                .withLearningRate(learningRate)
+                .withActivation('clippedRelu', 1)
+                .withOutputActivation('sigmoid')
+                .withTrainingExecution(execution)
+                .buildGPU();
+
+            logBlock('Dataset summary', {
+                rows: state.dataset.X.length,
+                features: state.dataset.featureNames.length,
+                numericColumns: state.dataset.numericColumns.length,
+                categoricalColumns: state.dataset.categoricalColumns.length,
+                execution,
+                gpuStatus: model.getGPUStatus(),
+            });
+
+            const start = performance.now();
+            console.time('house-train');
+            await model.trainGPU(trainXNorm, trainYNorm, epochs, { execution, logEvery });
+            console.timeEnd('house-train');
+            const elapsed = performance.now() - start;
+
+            const validationRows = [];
+            const actuals = [];
+            const predictions = [];
+
+            for (let index = 0; index < split.valX.length; index++) {
+                const features = split.valX[index];
+                const normalized = normalizeRow(features, state.dataset.xMin, state.dataset.xMax);
+                const predictionNorm = (await model.predictGPU(normalized))[0];
+                const prediction = denormalizeValue(predictionNorm, state.dataset.yMin, state.dataset.yMax);
+                const actual = split.valY[index][0];
+
+                actuals.push(actual);
+                predictions.push(prediction);
+                validationRows.push({
+                    id: split.valIds[index],
+                    features,
+                    actual,
+                    predicted: prediction,
+                    absError: Math.abs(actual - prediction),
+                });
+            }
+
+            const validationRmse = rmse(actuals, predictions);
+            const chartRows = validationRows.slice();
+            validationRows.sort((a, b) => a.absError - b.absError);
+
+            state.model = model;
+            state.validationRows = validationRows;
+
+            timeMetric.textContent = `${elapsed.toFixed(0)} ms`;
+            rmseMetric.textContent = formatCurrency(validationRmse);
+
+            populateSampleSelect(validationRows.map((row) => row.id));
+            updateResultsTable(validationRows);
+            drawChart(chartRows);
+            await predictValidationSample();
+
+            trainButton.disabled = false;
+            predictButton.disabled = false;
+            setStatus(`Training finished in ${elapsed.toFixed(1)}ms. GPU ready: ${model.getGPUStatus().initialized}.`);
+
+            logBlock('Training result', {
+                elapsedMs: Number(elapsed.toFixed(2)),
+                validationRmse: Number(validationRmse.toFixed(2)),
+                validationRows: validationRows.length,
+                chartRows: Math.min(chartRows.length, MAX_CHART_POINTS),
+                gpuStatus: model.getGPUStatus(),
+            });
+        }
+
+        async function loadDataset() {
+            setStatus('Loading train.csv…', true);
+            const response = await fetch('./train.csv');
+            if (!response.ok) {
+                throw new Error(`Failed to load train.csv: ${response.status}`);
+            }
+
+            const parsed = parseCsv(await response.text());
+            const dataset = buildDataset(parsed);
+            state.dataset = dataset;
+
+            rowsMetric.textContent = dataset.X.length.toLocaleString();
+            featuresMetric.textContent = dataset.featureNames.length.toLocaleString();
+            timeMetric.textContent = '-';
+            rmseMetric.textContent = '-';
+
+            runLogEl.textContent = 'Dataset loaded.';
+            logBlock('Columns', {
+                target: TARGET_COLUMN,
+                features: dataset.featureNames.length,
+                firstFive: dataset.featureNames.slice(0, 5),
+            });
+
+            setStatus('Dataset ready. Configure training and run the model.');
+        }
+
+        trainButton.addEventListener('click', () => {
+            trainModel().catch((error) => {
+                console.error(error);
+                trainButton.disabled = false;
+                predictButton.disabled = !state.model;
+                setStatus(`Training failed: ${error.message}`);
+                logBlock('Error', error.message);
+            });
+        });
+
+        predictButton.addEventListener('click', () => {
+            predictValidationSample().catch((error) => {
+                console.error(error);
+                setStatus(`Prediction failed: ${error.message}`);
+                logBlock('Prediction error', error.message);
+            });
+        });
+
+        sampleSelect.addEventListener('change', () => {
+            if (!state.model) return;
+            predictValidationSample().catch((error) => {
+                console.error(error);
+                setStatus(`Prediction failed: ${error.message}`);
+            });
+        });
+
+        loadDataset().catch((error) => {
+            console.error(error);
+            setStatus(`Failed to prepare dataset: ${error.message}`);
+            runLogEl.textContent = error.stack || error.message;
+        });
+    </script>
+</body>
+
+</html>
